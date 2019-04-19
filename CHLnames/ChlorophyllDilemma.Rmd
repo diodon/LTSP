@@ -1,0 +1,290 @@
+---
+title: "Chlorophyll variable name mystery"
+author: 'E. Klein'
+date: "2019-04-18"
+output: 
+  html_document:
+    toc:  TRUE
+    toc_float: TRUE
+    theme: united
+    highlight: tango
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, cache = F, echo = F, message = F, warning = F, tidy = F}
+# make this an external chunk that can be included in any file
+require(knitr)
+opts_chunk$set(echo =T, message = F, error = F, warning = F, comment = NA,  
+               fig.align = 'left',  fig.width = 7.5, fig.height = 6,
+               tidy = F, cache.path = '.cache/', fig.path = 'fig/')
+options(width = 100, stringAsFactors=F, scipen=999)
+
+library(RColorBrewer)
+palette(brewer.pal(8, "Set2"))
+
+library(ncdf4)
+library(readr)
+library(lubridate)
+library(ggplot2)
+library(dplyr)
+
+
+
+
+```
+
+Last run `r lubridate::now()`
+
+
+# INTRODUCTION
+
+In the CTD profiles and WQM burst average data collection you might encounter different names for the derived chlorophyll parameter. In a quick revision of the full collections three different names exists: 
+
+- `CHLF`: Chlorophyll estimate from fluorescence readings using *factory* provided coefficients. In the ncdf metadata: "mass_concentration_of_inferred_chlorophyll_from_relative_fluorescence_units_in_sea_water,Concentration of inferred chlorophyll from relative fluorescence per unit volume of the water body,conversion from fluorescence to chlorophyll-a using factory coefficients,Milligrams per cubic metre,mg m-3"
+- `CHLU`: Chlorophyll estimate from fluorescence readings using *user* provided coefficients. "mass_concentration_of_inferred_chlorophyll_from_relative_fluorescence_units_in_sea_water,Concentration of inferred chlorophyll from relative fluorescence per unit volume of the water body,conversion from fluorescence to chlorophyll-a using user coefficients,Milligrams per cubic metre,mg m-3"
+- `CPHL`: Chlorophyll estimate from fluorescence readings using an *unknown* coefficient. In the ncdf metadata: "mass_concentration_of_inferred_chlorophyll_from_relative_fluorescence_units_in_sea_water,Concentration of inferred chlorophyll from relative fluorescence per unit volume of the water body,conversion from fluorescence to chlorophyll-a using unknown coefficients,Milligrams per cubic metre,mg m-3"
+
+The idea is determine when and where those variables are present and to test if there are differences between the estimates when they are present in the same instrument.
+
+# CTD  profiles
+
+## Data Collection
+
+The data is pulled from the geoserver service using the following query:
+
+`http://geoserver-123.aodn.org.au/geoserver/ows?typeName=anmn_ctd_profiles_data&SERVICE=WFS&outputFormat=csv&REQUEST=GetFeature&VERSION=1.0.0*`
+
+The metadata was pulled using the following query: 
+
+`http://geoserver-123.aodn.org.au/geoserver/ows?typeName=anmn_ctd_profiles_map&SERVICE=WFS&outputFormat=csv&REQUEST=GetFeature&VERSION=1.0.0*`
+
+
+The resulting table is stored locally so no need to repeat the geoserver query. 
+
+```{r dataread}
+## read CTD profiles from local file
+CTD <- read_csv("IMOS_-_Australian_National_Mooring_Network_(ANMN)_-_CTD_Profiles.csv", skip=29)
+
+## read metadata from the geoserver
+CTD.map = read_csv("http://geoserver-123.aodn.org.au/geoserver/ows?typeName=anmn_ctd_profiles_map&SERVICE=WFS&outputFormat=csv&REQUEST=GetFeature&VERSION=1.0.0*")
+
+
+## set chlorophyll variables as numeric
+CTD$CHLF = as.numeric(CTD$CHLF)
+CTD$CHLU = as.numeric(CTD$CHLU)
+CTD$CPHL = as.numeric(CTD$CPHL)
+
+
+
+```
+
+
+The collection contains `r length(CTD$file_id)` CTD profiles from`r length(unique(CTD$cruise_id))` cruises
+
+
+```{r CHLvalues}
+## uncomment to re-run
+## 
+# CHL = CTD %>% group_by(file_id) %>%
+#   summarise(CHLF = sum(!is.na(CHLF)),
+#             CHLU = sum(!is.na(CHLU)),
+#             CPHL = sum(!is.na(CPHL)))
+# 
+# 
+# ## add metadata
+# CHL = left_join(CHL, CTD.map)
+# 
+# ## get the name of the instrument from the thredds server
+# ## as it is not in the .map file I need to get it from each individual file
+# ## this operation could take ~5mins as there are ~1600 files to open
+# urlPrefix = "http://thredds.aodn.org.au/thredds/dodsC/"
+# instrument=character()
+# 
+# for (i in 1:nrow(CHL)){
+#   print(i)
+#   nc=nc_open(paste0(urlPrefix, CHL$url[i]))
+#   instrument = append(instrument, ncatt_get(nc,0)$instrument)
+#   nc_close(nc)
+# }
+# 
+# CHL$instrument = instrument
+# 
+# write_csv(CHL, "CHL.csv")
+```
+
+
+```{r}
+## read the metadata
+## already processed file
+CHL = read_csv("CHL.csv")
+
+```
+
+
+### Who is measuring what
+
+A table of the instruments per chlorophyll variable
+
+No instrument is reporting `CHLU`
+
+No instrument is reporting more than one chlorophyll variable
+
+
+```{r}
+instrumentVariable = data.frame(Variable = c("CHLF", "CHLU", "CPHL"),
+                                Instruments = c(paste0(unique(CHL$instrument[CHL$CHLF!=0]), collapse = ", "),
+                                                paste0(unique(CHL$instrument[CHL$CHLU!=0]), collapse = ", "),
+                                                paste0(unique(CHL$instrument[CHL$CPHL!=0]), collapse = ", ")))
+
+knitr::kable(instrumentVariable)
+```
+
+
+
+## CHL variables by Station
+
+This table shows the number of profiles that include each of the variable per `site_code`.
+
+```{r}
+siteCHL = CTD %>% group_by(site_code) %>% summarise(CHLF = length(unique(file_id[!is.na(CHLF)])), 
+                                                    CPHL = length(unique(file_id[!is.na(CPHL)])))
+
+knitr::kable(siteCHL)
+```
+
+
+# WQM timeseries
+
+## Data collection
+
+The data (burst averaged collection) is pulled from the geoserver service using the following query:
+
+data: 
+`http://geoserver-123.aodn.org.au/geoserver/ows?typeName=anmn_burst_avg_timeseries_data&SERVICE=WFS&outputFormat=csv&REQUEST=GetFeature&VERSION=1.0.0&`
+
+metadata:
+`http://geoserver-123.aodn.org.au/geoserver/ows?typeName=anmn_burst_avg_timeseries_map&SERVICE=WFS&outputFormat=csv&REQUEST=GetFeature&VERSION=1.0.0`
+
+As the file are quite big, I will pull the data by `site_code`, one by one. Also see if there are concomitant measurements of two chlorophyll variables. The result table is stored for future needs.
+
+```{r}
+
+# get metadata first
+WQM.map <- read_csv("http://geoserver-123.aodn.org.au/geoserver/ows?typeName=anmn_burst_avg_timeseries_map&SERVICE=WFS&outputFormat=csv&REQUEST=GetFeature&VERSION=1.0.")
+## get the name of sites
+sitenames = unique(WQM.map$site_code)
+
+
+## 
+## uncomment to re-run
+##
+
+
+# WQM.chl = data.frame(site_code = character(),
+#                      CHLF = numeric(),
+#                      CHLU = numeric(),
+#                      CPHL = numeric(),
+#                      CHLFCHLU = logical(),
+#                      CHLFCPHL = logical(),
+#                      CHLUCPHL = logical())
+# 
+# for (i in 1: length(sitenames)){
+# 
+#   print(paste0(i, " - ", sitenames[i]))
+# 
+#   GEOquery = paste0("http://geoserver-123.aodn.org.au/geoserver/ows?typeName=anmn_burst_avg_timeseries_data&SERVICE=WFS&outputFormat=csv&REQUEST=GetFeature&VERSION=1.0.0&CQL_FILTER=(site_code%20LIKE%20'", sitenames[i], "')")
+#   WQM.data = suppressMessages(read_csv(GEOquery))
+# 
+# 
+#   WQM.chl = bind_rows(WQM.chl, data.frame(site_code = sitenames[i],
+#                                           CHLF = length(unique(WQM.data$timeseries_id[!is.na(WQM.data$CHLF)])),
+#                                           CHLU = length(unique(WQM.data$timeseries_id[!is.na(WQM.data$CHLU)])),
+#                                           CPHL = length(unique(WQM.data$timeseries_id[!is.na(WQM.data$CPHL)])),
+#                                           CHLFCHLU = ifelse(sum(!is.na(WQM.data$CHLF) & !is.na(WQM.data$CHLU))>0,
+#                                                             TRUE, FALSE),
+#                                           CHLFCPHL = ifelse(sum(!is.na(WQM.data$CHLF) & !is.na(WQM.data$CPHL))>0,
+#                                                             TRUE, FALSE),
+#                                           CHLUCPHL = ifelse(sum(!is.na(WQM.data$CHLU) & !is.na(WQM.data$CPHL))>0,
+#                                                             TRUE, FALSE)
+#                                           ))
+# 
+# }
+# 
+# write_csv(WQM.chl, "WQMchl.csv")
+
+WQM.chl = read_csv("WQMchl.csv")
+
+knitr::kable(WQM.chl)
+```
+
+
+At PH100 and SYD100 have concomitant measurements of `CHLU` and `CHLF`. Let's explore the relationship between both.
+
+### PH100
+
+```{r}
+i=12 ## PH100
+GEOquery = paste0("http://geoserver-123.aodn.org.au/geoserver/ows?typeName=anmn_burst_avg_timeseries_data&SERVICE=WFS&outputFormat=csv&REQUEST=GetFeature&VERSION=1.0.0&CQL_FILTER=(site_code%20LIKE%20'", sitenames[i], "')")
+WQM.data = suppressMessages(read_csv(GEOquery))
+
+plot(WQM.data$CHLU, WQM.data$CHLF, pch=19, cex=0.5, col="blue")
+model = lm(CHLU~CHLF, data=WQM.data)
+
+CHLUCHLFbias.PH100 = mean(WQM.data$CHLU - WQM.data$CHLF, na.rm=T)
+
+summary(model)
+```
+
+For PH100 there is a calibration factor of `r model$coefficients[2]` units of CHLF per unit of CHLU. The **mean bias** between `CHLU`and `CHLF` is **`r CHLUCHLFbias.PH100` mg/m³**.
+
+### SYD100
+
+
+```{r}
+i=15 ## SYD100
+GEOquery = paste0("http://geoserver-123.aodn.org.au/geoserver/ows?typeName=anmn_burst_avg_timeseries_data&SERVICE=WFS&outputFormat=csv&REQUEST=GetFeature&VERSION=1.0.0&CQL_FILTER=(site_code%20LIKE%20'", sitenames[i], "')")
+WQM.data = suppressMessages(read_csv(GEOquery))
+
+plot(WQM.data$CHLU, WQM.data$CHLF, pch=19, cex=0.5, col="blue")
+model = lm(CHLU~CHLF, data=WQM.data)
+
+CHLUCHLFbias.SYD100 = mean(WQM.data$CHLU - WQM.data$CHLF, na.rm=T)
+
+summary(model)
+```
+
+For PH100 there is a calibration factor of `r model$coefficients[2]` units of CHLF per unit of CHLU. The **mean bias** between `CHLU`and `CHLF` is **`r CHLUCHLFbias.SYD100` mg/m³**.
+
+
+# CONCLUSIONS 
+
+Analysing the CTD profiles and the WQM instruments for the chlorophyll variables, this are the results of the exploration:
+
+1. in the CTD profiles and the WQM burst average collections are three (3) different names for the chlorophyll, as separate variables: CHLF, CHLU, CPHL.
+2. For the CTD collection: 
+  + CHLU is not used anywhere in the CTD profiles. However it is used in 12 of the 28 WQM sites.
+  + The name of the variable is associated with the instrument producing the measurement.
+  + There are no cases with two CHL variables for the same profile exist
+  + There are few stations (most of the NRS) that have alternate CHLF and CPHL variables in different profiles during its existence.
+3. For the WQM burst average collection
+  + All three variables could be found in the collection in different sites and different instruments
+  + Only at PH100 and SYD100 exist concomitant measurements of `CHLU` and `CHLF`. The mean bias between `CHLU` and `CHLF` is `r CHLUCHLFbias.PH100` mg/m³ for PH100 and `r CHLUCHLFbias.SYD100` mg/m³ for SYD100 in 
+  
+  
+# RECOMMENDATIONS
+
+1. Add a new variable in each collection with the standard and unique name of `CHL` (and its corresponding burst statistics if applicable), and specify in the metadata the origin of the variable
+
+2. Contact the BGC steering group to seek recommendation on what variable to use in case of the WQM register with `CHLU` and `CHLF` variables at the same timestamp.
+
+
+  
+
+
+
+
+
+
