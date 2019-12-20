@@ -31,7 +31,6 @@ def in_water(nc):
 files_to_aggregate = [f for f in glob.glob("samples/*.nc")]
 
 
-var_to_aggregate = ['UCUR', 'VCUR', 'WCUR']
 
 ## empty container for metadata
 metadata = pd.DataFrame(columns=['source_file', 'instrument_id', 'LATITUDE', 'LONGITUDE', 'NOMINAL_DEPTH'])
@@ -57,7 +56,7 @@ for index, file in enumerate(files_to_aggregate):
 
         nc = in_water(nc)
         ## get variable list
-        varList = list(nc.variables)
+        varList = list(nc.data_vars)
         ## get metadata
         metadata = metadata.append({'source_file': file,
                                     'instrument_id': nc.attrs['deployment_code'] + '; ' + nc.attrs['instrument'] + '; ' + nc.attrs['instrument_serial_number'],
