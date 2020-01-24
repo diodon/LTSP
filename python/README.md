@@ -59,7 +59,7 @@ http://thredds.aodn.org.au/thredds/dodsC/IMOS/ANMN/NRS/NRSYON/Biogeochem_timeser
 
 ### notes
 
-The THREDDS server could be very slow if you plan to open more than few files or a very fat one, even producing a time-out error. It is better if you download the files locally using for example `wget`. For that just change '/dodC/'in the URL by '/fileServer/'and you can download it.
+The THREDDS server could be very slow if you plan to open more than few files or a very fat one, even producing a time-out error. It is better if you download the files locally using for example `wget`. For that just change '/dodC/' in the URL by '/fileServer/' and you can download it.
 
-Another option os to get the file directly from IMOS-AODN Amazon S3 storage. Just replace "http://thredds.aodn.org.au/thredds/dodsC/" in your URL with "https://s3-ap-southeast-2.amazonaws.com/imos-data/", you get a URL that you can download directly from S3 with e.g. wget.
+Another option is to get the file directly from IMOS-AODN Amazon S3 storage. Just replace "http://thredds.aodn.org.au/thredds/dodsC/" in your URL with "https://s3-ap-southeast-2.amazonaws.com/imos-data/", you get a URL that you can use to download the file directly from S3.
 
