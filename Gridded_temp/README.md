@@ -1,0 +1,1 @@
+# Gridded temperature time series
